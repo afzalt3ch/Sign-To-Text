@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sign Language Recognition</title>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600&display=swap">
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/handpose"></script>
+    <style>
+        :root {
+            --primary-color: #2563eb;
+            --secondary-color: #4f46e5;
+            --accent-color: #22d3ee;
+            --dark-color: #1e293b;
+            --light-color: #f8fafc;
+        }
+
+        body {
+            font-family: 'Poppins', sans-serif;
+            background: linear-gradient(135deg, #f3f4f6 0%, #e5e7eb 100%);
+            margin: 0;
+            padding: 2rem;
+            min-height: 100vh;
+            color: var(--dark-color);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .container {
+            max-width: 800px;
+            width: 100%;
+            background: white;
+            border-radius: 1.5rem;
+            padding: 2rem;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            margin-top: 2rem;
+        }
+
+        h1 {
+            text-align: center;
+            font-size: 2.5rem;
+            color: var(--dark-color);
+            margin: 1rem 0;
+            background: linear-gradient(45deg, var(--primary-color), var(--secondary-color));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .button-group {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 1rem;
+            margin: 2rem 0;
+        }
+
+        button {
+            background: linear-gradient(45deg, var(--primary-color), var(--secondary-color));
+            color: var(--light-color);
+            border: none;
+            padding: 0.8rem 1.5rem;
+            border-radius: 0.75rem;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 12px rgba(0,0,0,0.15);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        #reset-btn {
+            background: linear-gradient(45deg, #64748b, #475569);
+        }
+
+        #undo-btn {
+            background: linear-gradient(45deg, #f59e0b, #d97706);
+        }
+
+        .camera-container {
+            position: relative;
+            width: 100%;
+            max-width: 400px;
+            margin: 2rem auto;
+            border-radius: 1rem;
+            overflow: hidden;
+            box-shadow: 0 8px 20px rgba(0,0,0,0.1);
+            transition: transform 0.3s ease;
+        }
+
+        .camera-container:hover {
+            transform: scale(1.02);
+        }
+
+        #video-stream {
+            width: 100%;
+            height: auto;
+            display: block;
+            border: 4px solid white;
+            border-radius: 1rem;
+        }
+
+        .prediction-box {
+            background: white;
+            padding: 2rem;
+            border-radius: 1rem;
+            margin: 2rem 0;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+            text-align: center;
+            animation: fadeIn 0.5s ease;
+        }
+
+        #prediction {
+            font-size: 2rem;
+            color: var(--primary-color);
+            font-weight: 700;
+            margin: 1rem 0;
+            min-height: 60px;
+            border-bottom: 3px solid var(--accent-color);
+            padding-bottom: 0.5rem;
+            transition: all 0.3s ease;
+        }
+
+        #suggestion {
+            font-size: 1.1rem;
+            color: #3b82f6;
+            background: #e0f2fe;
+            padding: 1rem;
+            border-radius: 0.5rem;
+            margin: 1rem 0;
+            animation: pulse 2s infinite;
+            display: inline-block;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.02); }
+            100% { transform: scale(1); }
+        }
+
+        .status-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-left: 0.5rem;
+            display: inline-block;
+        }
+
+        .active-status {
+            background: #10b981;
+            box-shadow: 0 0 8px #10b981;
+        }
+
+        @media (max-width: 600px) {
+            .container {
+                padding: 1rem;
+                border-radius: 1rem;
+            }
+            
+            h1 {
+                font-size: 2rem;
+            }
+            
+            .button-group {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <h1>Sign Language Translator</h1>
+    
+    <div class="container">
+        <div class="button-group">
+            <button id="start-btn">Start <span class="status-indicator"></span></button>
+            <button id="stop-btn" style="display:none;">Stop <span class="status-indicator active-status"></span></button>
+            <button id="reset-btn">Reset</button>
+            <button id="undo-btn">Undo</button>
+        </div>
+
+        <div class="camera-container">
+            <video id="video-stream" autoplay></video>
+        </div>
+
+        <div class="prediction-box">
+            <div style="font-size: 1.2rem; color: #64748b;">Live Translation:</div>
+            <div id="prediction" contenteditable="true"></div>
+            <div id="suggestion">👋 Try showing a hand sign!</div>
+        </div>
+    </div>
+    <script>
+        const videoStream = document.getElementById('video-stream');
+        const cameraImage = document.getElementById('camera-image');
+        const predictionText = document.getElementById('prediction');
+        const suggestionText = document.getElementById('suggestion');
+        const startBtn = document.getElementById('start-btn');
+        const stopBtn = document.getElementById('stop-btn');
+        const resetBtn = document.getElementById('reset-btn');
+        const undoBtn = document.getElementById('undo-btn');
+        let mediaStream;
+        let predictions = [];
+        let captureInterval;
+
+        // Dictionary of predictions and their suggestions
+        const suggestionDictionary = {
+            'h': 'Did you mean "Hello"?',
+            'she': 'Did you mean "She"?',
+            'hi': 'Did you mean "Hi"?'
+            // Add more suggestions here
+        };
+
+        // Load the Handpose model
+        let model;
+        async function loadHandpose() {
+            model = await handpose.load();
+            console.log("Handpose model loaded.");
+        }
+
+        // Function to start the camera stream
+        function startCamera() {
+            navigator.mediaDevices.getUserMedia({ video: true })
+                .then(stream => {
+                    mediaStream = stream;
+                    videoStream.srcObject = stream;
+                })
+                .catch(err => {
+                    console.error("Error accessing camera: ", err);
+                    predictionText.textContent = "Error accessing camera.";
+                });
+        }
+
+        // Start capturing images every 3 seconds
+        function startCapturing() {
+            captureInterval = setInterval(autoCapture, 2000); // Capture every 3 seconds
+        }
+
+        // Stop capturing images
+        function stopCapturing() {
+            clearInterval(captureInterval); // Stop the interval
+        }
+
+        // Detect hand using TensorFlow.js Handpose
+        async function detectHand() {
+            const predictions = await model.estimateHands(videoStream);
+
+            if (predictions.length > 0) {
+                console.log("Hand detected.");
+                return true;
+            } else {
+                console.log("No hand detected.");
+                return false;
+            }
+        }
+
+        // Capture image from live camera
+        async function autoCapture() {
+            const handDetected = await detectHand();
+
+            if (handDetected) {
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+                canvas.width = videoStream.videoWidth;
+                canvas.height = videoStream.videoHeight;
+                ctx.drawImage(videoStream, 0, 0, canvas.width, canvas.height);
+
+                // Convert captured image to Blob and send it as a file
+                canvas.toBlob(function(blob) {
+                    const formData = new FormData();
+                    formData.append('file', blob, 'captured-image.png'); // Unique name for each capture
+
+                    // Send the captured image to Flask for prediction
+                    sendImageToBackend(formData);
+
+                    // Display the captured image
+                    const imageUrl = URL.createObjectURL(blob);
+                    cameraImage.src = imageUrl;
+                    cameraImage.style.display = 'block';
+                }, 'image/png');
+            } else {
+                suggestionText.innerText = "No hand detected.";  // Show 'No hand detected' below the prediction
+            }
+        }
+
+        // Send image data to backend for prediction
+        function sendImageToBackend(formData) {
+            $.ajax({
+                url: '/predict',        // Flask endpoint
+                method: 'POST',         // POST method
+                data: formData,         // Send image form data
+                processData: false,     // Don't process the data
+                contentType: false,     // Let the browser set the content type
+                success: function(data) {
+                    if (data.predicted_class && data.predicted_class !== 'nothing') {
+                        if (data.predicted_class === 'space') {
+                            predictions.push(' ');  // Add space between words
+                        } else {
+                            predictions.push(data.predicted_class);
+                        }
+                        const fullPrediction = predictions.join('');
+                        predictionText.innerText = "Predicted Sequence: " + fullPrediction;
+
+                        // Check for suggestions
+                        if (suggestionDictionary[data.predicted_class]) {
+                            suggestionText.innerText = suggestionDictionary[data.predicted_class];
+                        } else {
+                            suggestionText.innerText = ''; // Clear suggestion if no match
+                        }
+                    } else {
+                        console.log('Prediction: nothing, not appending');
+                    }
+                },
+                error: function(xhr, status, error) {
+                    predictionText.textContent = 'Error: Unable to make a prediction';
+                    console.error('Error:', error);
+                }
+            });
+        }
+
+        // Handle the Undo button click event
+        undoBtn.addEventListener('click', () => {
+            if (predictions.length > 0) {
+                predictions.pop();  // Remove the last item from the predictions array
+                const fullPrediction = predictions.join('');  // Join the remaining predictions
+                predictionText.innerText = "Predicted Sequence: " + fullPrediction;  // Update the prediction display
+            }
+        });
+
+        // Show Undo button when starting the live capture
+        startBtn.addEventListener('click', () => {
+            startCapturing();
+            startBtn.style.display = 'none';   // Hide start button
+            stopBtn.style.display = 'inline';  // Show stop button
+            resetBtn.style.display = 'inline'; // Show reset button
+            undoBtn.style.display = 'inline';  // Show undo button
+        });
+
+        // Hide Undo button when stopping
+        stopBtn.addEventListener('click', () => {
+            stopCapturing();
+            startBtn.style.display = 'inline';  // Show start button
+            stopBtn.style.display = 'none';     // Hide stop button
+            undoBtn.style.display = 'none';     // Hide undo button (optional)
+        });
+
+        // Reset predictions and hide Undo button when resetting
+        resetBtn.addEventListener('click', () => {
+            predictions = [];                   // Clear predictions
+            predictionText.innerText = '';      // Clear the displayed prediction
+            suggestionText.innerText = '';      // Clear the suggestion
+            cameraImage.style.display = 'none'; // Hide the captured image
+            undoBtn.style.display = 'none';     // Hide undo button
+        });
+
+        // Load the Handpose model and start the camera when the page loads
+        loadHandpose();
+        startCamera();
+    </script>
+</body>
+</html>
